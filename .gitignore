@@ -1,0 +1,18 @@
+# 虚拟环境与模型权重（用 tools/download_models.py 下载）
+.venv/
+models/
+
+# macOS / exFAT 产生的隐藏文件
+.DS_Store
+._*
+
+# Python / Jupyter 缓存
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+
+# 不属于本教程的文件
+/build_notebook.py
+/vlm_step_by_step.ipynb
+/vlm_step_by_step.py
+/results/vlm_step_by_step.html

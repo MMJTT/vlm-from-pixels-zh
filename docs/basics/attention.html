@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>注意力是怎么算的 · VLM 交互图解</title>
+<link rel="stylesheet" href="../assets/style.css">
+<style>
+  .mat { border-collapse: collapse; font-family: ui-monospace, Menlo, monospace; font-size: 13px; }
+  .mat td { width: 54px; height: 30px; text-align: center; border: 1px solid #fff; transition: background .3s; }
+  .mat td.h { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .mat th { font-weight: 500; font-size: 12px; color: var(--muted); padding: 0 6px; }
+  .tok { display: inline-flex; flex-direction: column; align-items: center; font-size: 12px; margin-right: 8px; cursor: pointer; padding: 4px; border-radius: 8px; border: 2px solid transparent; }
+  .tok.sel { border-color: var(--accent); }
+  .tok canvas { width: 56px; height: 56px; }
+  .stepnav { display: flex; gap: 8px; flex-wrap: wrap; }
+  .stepnav button.done { border-color: #9cc59c; }
+  .formula { font-family: ui-monospace, Menlo, monospace; background: #f6f5f1; border-radius: 8px; padding: 8px 12px; display: inline-block; }
+</style>
+</head>
+<body>
+<header class="top">
+  <a class="brand" href="../">VLM 交互图解</a>
+  <a href="conv.html">卷积</a>
+  <a class="on" href="attention.html">注意力</a>
+  <a href="../image/">一张照片的旅程</a>
+  <a href="https://mmjtt.github.io/omni-from-video-zh/">一段视频的旅程 ↗</a>
+</header>
+<main>
+<h1>注意力是怎么算的</h1>
+<p class="lead">5 个 token（照片里的 5 个小块），每个用一个 4 维向量表示。一步一步算出"每个 token 应该从其他 token 那里拿多少信息"。数字是为了演示设计的玩具数据，计算过程和真实模型完全一样（对应 vlm-from-pixels-zh 第 03、05 章）。</p>
+
+<section class="step">
+  <div class="controls">
+    <span class="label">点选一个"提问者"（query）：</span><div id="toks"></div>
+  </div>
+  <div class="controls">
+    <label class="label"><input type="checkbox" id="causal"> 因果掩码（语言模型：只能看自己和前面的 token）</label>
+    <span class="label" style="margin-left:14px">温度（缩放）</span><input type="range" id="temp" min="0.25" max="4" step="0.05" value="1" style="max-width:180px"><span class="value" id="tempv"></span>
+  </div>
+  <div class="stepnav" id="nav"></div>
+  <div class="controls"><button id="prev">‹ 上一步</button><button id="next">下一步 ›</button><button id="auto">▶ 自动演示</button></div>
+  <p class="explain" id="explain"></p>
+  <div class="row">
+    <div class="col" id="left"></div>
+    <div class="col" id="right"></div>
+  </div>
+</section>
+</main>
+<footer>教程 © MMJTT，CC BY-NC 4.0 · <a href="https://github.com/MMJTT/vlm-from-pixels-zh">vlm-from-pixels-zh</a></footer>
+
+<script src="../assets/common.js"></script>
+<script>
+(async function () {
+  // 5 个 token：取自照片的 5 个位置（与第 03 章的观察点一致），以及为演示设计的 4 维嵌入
+  const NAMES = ["蛋", "牛肉", "配料", "木桌", "金勺"];
+  const SPOTS = [[16, 16], [18, 10], [22, 15], [4, 5], [14, 26]];  // 32×32 网格上的行列
+  const X = [[1.0, 0.2, 0.9, 0.1], [0.2, 1.0, 0.7, 0.0], [0.1, 0.9, 0.8, 0.2], [0.0, 0.1, 0.1, 1.0], [0.3, 0.0, 0.2, 0.8]];
+  const Wq = [[1, 0, 0.5, 0], [0, 1, 0.5, 0], [0.5, 0.5, 1, 0], [0, 0, 0, 1]];
+  const Wk = [[1, 0.2, 0, 0], [0.2, 1, 0, 0], [0.5, 0.5, 1, 0.2], [0, 0, 0.2, 1]];
+  const Wv = [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]];
+  const d = 4;
+  const matmul = (A, B) => A.map(r => B[0].map((_, j) => r.reduce((s, v, k) => s + v * B[k][j], 0)));
+  const T = A => A[0].map((_, j) => A.map(r => r[j]));
+  let sel = 0, step = 0, autoT = null;
+
+  const im = await loadImage("../image/data/input512.png");
+  NAMES.forEach((n, i) => {
+    const div = document.createElement("div"); div.className = "tok" + (i === sel ? " sel" : "");
+    const c = document.createElement("canvas"); c.width = 56; c.height = 56;
+    c.getContext("2d").drawImage(im, SPOTS[i][1] * 16 - 8, SPOTS[i][0] * 16 - 8, 32, 32, 0, 0, 56, 56);
+    div.append(c, n); div.onclick = () => { sel = i; document.querySelectorAll(".tok").forEach((t, k) => t.classList.toggle("sel", k === i)); render(); };
+    $("#toks").appendChild(div);
+  });
+
+  function compute() {
+    const temp = +$("#temp").value;
+    const Q = matmul(X, Wq), K = matmul(X, Wk), V = matmul(X, Wv);
+    const S = matmul(Q, T(K));
+    const Ss = S.map(r => r.map(v => v / Math.sqrt(d) / temp));
+    const causal = $("#causal").checked;
+    const M = Ss.map((r, i) => r.map((v, j) => causal && j > i ? -Infinity : v));
+    const A = M.map(r => { const m = Math.max(...r); const e = r.map(v => Math.exp(v - m)); const s = e.reduce((a, b) => a + b); return e.map(v => v / s); });
+    const O = matmul(A, V);
+    return { Q, K, V, S, Ss, M, A, O, temp, causal };
+  }
+  const fmt = v => v === -Infinity ? "−∞" : (Math.abs(v) < 1e-9 ? "0" : v.toFixed(2));
+  function color(v, lo, hi) {
+    if (v === -Infinity) return "#e9e7e2";
+    const t = (v - lo) / (hi - lo + 1e-9), c = cmap(0.15 + 0.8 * t, "viridis");
+    return `rgba(${c[0]},${c[1]},${c[2]},.55)`;
+  }
+  function table(M, rows, cols, { hlRow = -1, hlCol = -1, hlCell = null, title = "" } = {}) {
+    const flat = M.flat().filter(v => v !== -Infinity), lo = Math.min(...flat), hi = Math.max(...flat);
+    let h = `<p class="label">${title}</p><table class="mat"><tr><th></th>${cols.map(c => `<th>${c}</th>`).join("")}</tr>`;
+    M.forEach((r, i) => {
+      h += `<tr><th>${rows[i]}</th>` + r.map((v, j) => {
+        const hl = i === hlRow || j === hlCol || (hlCell && hlCell[0] === i && hlCell[1] === j);
+        return `<td class="${hl ? "h" : ""}" style="background:${color(v, lo, hi)}">${fmt(v)}</td>`;
+      }).join("") + "</tr>";
+    });
+    return h + "</table>";
+  }
+  const dims = ["d1", "d2", "d3", "d4"];
+  const STEPS = [
+    { name: "① 输入 X", text: c => `每个 token 是一个 4 维向量（真实模型里是 768 维）。这一行行数字就是"蛋""牛肉"……在模型里的表示。`,
+      left: c => table(X, NAMES, dims, { hlRow: sel, title: "X：5 个 token × 4 维" }), right: c => "" },
+    { name: "② 生成 Q、K、V", text: c => `每个 token 乘三个不同的矩阵，得到三个向量：<b>Q（我想找什么）</b>、<b>K（我有什么特征）</b>、<b>V（被看中时我交出什么）</b>。<span class="formula">Q = X·Wq，K = X·Wk，V = X·Wv</span>`,
+      left: c => table(c.Q, NAMES, dims, { hlRow: sel, title: "Q = X · Wq" }) + table(c.K, NAMES, dims, { title: "K = X · Wk" }),
+      right: c => table(c.V, NAMES, dims, { title: "V = X · Wv（这里取单位矩阵，V = X）" }) },
+    { name: "③ 打分 Q·K", text: c => `"${NAMES[sel]}"的 Q 和每个 token 的 K 做点积：方向越一致，分数越高。整张表是 <span class="formula">S = Q · Kᵀ</span>，第 i 行第 j 列 = token i 对 token j 的打分。<br>${NAMES.map((n, j) => `${NAMES[sel]}·${n} = ${c.Q[sel].map((q, k) => `${q.toFixed(2)}×${c.K[j][k].toFixed(2)}`).join(" + ")} = <b>${c.S[sel][j].toFixed(2)}</b>`).join("<br>")}`,
+      left: c => table(c.S, NAMES, NAMES, { hlRow: sel, title: "S = Q · Kᵀ（行：提问者，列：被看的）" }), right: c => "" },
+    { name: "④ 缩放", text: c => `除以 √d = √${d} = ${Math.sqrt(d)}（再除以温度 ${c.temp.toFixed(2)}）。维度越大点积越大，缩放是为了让 softmax 不至于太"尖"。拖动上方的<b>温度</b>滑块，看看 softmax 结果怎么变。` + (c.causal ? `<br>勾选了因果掩码：右上角（未来的 token）被设成 −∞，softmax 后权重为 0。` : ""),
+      left: c => table(c.M, NAMES, NAMES, { hlRow: sel, title: c.causal ? "S / √d，并屏蔽未来位置" : "S / √d" }), right: c => "" },
+    { name: "⑤ softmax", text: c => `每一行做 softmax：先取 e 的指数，再除以这一行的总和，变成加起来等于 1 的"注意力权重"。"${NAMES[sel]}"把注意力分给：${NAMES.map((n, j) => `${n} ${(c.A[sel][j] * 100).toFixed(0)}%`).join("，")}。`,
+      left: c => table(c.A, NAMES, NAMES, { hlRow: sel, title: "注意力权重 A（每行和为 1）" }),
+      right: c => { const el = document.createElement("div"); el.className = "bars"; renderBars(el, NAMES.map((n, j) => [n, c.A[sel][j]])); return `<p class="label">"${NAMES[sel]}" 这一行</p>` + el.outerHTML; } },
+    { name: "⑥ 加权求和", text: c => `用权重把各个 token 的 V 加起来：<span class="formula">输出 = Σⱼ Aᵢⱼ · Vⱼ</span>。"${NAMES[sel]}"的新表示 = ${NAMES.map((n, j) => `${c.A[sel][j].toFixed(2)}×V(${n})`).join(" + ")}。它吸收了注意力最多的那些 token 的信息——这就是"交流"。`,
+      left: c => table(c.V.map((r, j) => r.map(v => v * c.A[sel][j])), NAMES.map((n, j) => `${(c.A[sel][j] * 100).toFixed(0)}%×${n}`), dims, { title: "每个 V 乘上权重" }),
+      right: c => table([X[sel], c.O[sel]], ["原来", "注意力之后"], dims, { title: `"${NAMES[sel]}" 的向量：前后对比` }) + `<p class="note">真实模型里还会再乘一个输出矩阵、加上原来的向量（残差连接），然后进入 MLP。多头注意力就是把上面的过程并行做 12 份（每份用不同的 Wq、Wk、Wv）。</p>` },
+  ];
+  STEPS.forEach((s, i) => { const b = document.createElement("button"); b.textContent = s.name; b.onclick = () => { stopAuto(); step = i; render(); }; $("#nav").appendChild(b); });
+  function render() {
+    const c = compute(); $("#tempv").textContent = (+$("#temp").value).toFixed(2);
+    const s = STEPS[step];
+    $("#explain").innerHTML = s.text(c); $("#left").innerHTML = s.left(c); $("#right").innerHTML = s.right(c);
+    document.querySelectorAll("#nav button").forEach((b, i) => { b.classList.toggle("on", i === step); b.classList.toggle("done", i < step); });
+  }
+  function stopAuto() { clearInterval(autoT); autoT = null; $("#auto").textContent = "▶ 自动演示"; $("#auto").classList.remove("on"); }
+  $("#prev").onclick = () => { stopAuto(); step = Math.max(0, step - 1); render(); };
+  $("#next").onclick = () => { stopAuto(); step = Math.min(STEPS.length - 1, step + 1); render(); };
+  $("#auto").onclick = () => {
+    if (autoT) return stopAuto();
+    $("#auto").textContent = "⏸ 暂停"; $("#auto").classList.add("on"); step = 0; sel = 0; render();
+    autoT = setInterval(() => {
+      if (step < STEPS.length - 1) step++; else { step = 2; sel = (sel + 1) % NAMES.length; document.querySelectorAll(".tok").forEach((t, k) => t.classList.toggle("sel", k === sel)); }
+      render();
+    }, 2600);
+  };
+  $("#causal").onchange = render; $("#temp").oninput = render;
+  render();
+})();
+</script>
+</body>
+</html>

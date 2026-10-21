@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VLM 交互图解：模型怎样看懂图片和视频</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<header class="top">
+  <a class="brand" href="./">VLM 交互图解</a>
+  <a href="basics/conv.html">卷积</a>
+  <a href="basics/attention.html">注意力</a>
+  <a href="image/">一张照片的旅程</a>
+  <a href="https://mmjtt.github.io/omni-from-video-zh/">一段视频的旅程 ↗</a>
+  <a href="https://github.com/MMJTT/vlm-from-pixels-zh">代码 ↗</a>
+</header>
+<main>
+<h1>VLM 交互图解</h1>
+<p class="lead">视觉语言模型怎样看懂一张图片、一段视频？每一页都可以播放、拖动、点击，看清楚每一步发生了什么。页面里的数据都是小模型在 Mac 上真实算出来的；配套的 Jupyter 教程（中文逐行注释）在 GitHub 上。</p>
+
+<h2 style="margin-top:28px">基础原理</h2>
+<div class="cards" style="margin-top:12px">
+  <a class="card" href="basics/conv.html"><h3>卷积是怎么算的</h3><p>卷积核在图片上一格一格滑动，乘、加、得到输出像素。可以换卷积核、改步长，还能看到 ViT 的"切块"其实也是卷积。</p></a>
+  <a class="card" href="basics/attention.html"><h3>注意力是怎么算的</h3><p>5 个 token，从 Q、K、V 到打分、缩放、softmax、加权求和，一步一步算。可以切换因果掩码、调节温度。</p></a>
+</div>
+
+<h2 style="margin-top:28px">完整旅程</h2>
+<div class="cards" style="margin-top:12px">
+  <a class="card" href="image/"><h3>一张照片的旅程</h3><p>SmolVLM-256M：照片 → 1024 个 patch → 12 层视觉编码器 → 64 个 token → 30 层语言模型 → 逐词生成。点击照片任意位置看注意力，拖动滑块逐层看变化。</p></a>
+  <a class="card" href="https://mmjtt.github.io/omni-from-video-zh/"><h3>一段视频的旅程 ↗</h3><p>Qwen2.5-Omni-3B：16 秒视频的画面和声音 → 3D patch 与 mel 频谱 → 每 2 秒交错排列 + TMRoPE 时间对齐 → 逐词生成时看向哪一秒。</p></a>
+</div>
+
+<h2 style="margin-top:28px">配套教程（Jupyter）</h2>
+<ul>
+  <li><a href="https://github.com/MMJTT/vlm-from-pixels-zh">vlm-from-pixels-zh</a>：从一张照片看懂视觉语言模型（10 章：PyTorch 入门、CNN、预处理、SigLIP、连接器、语言模型、生成、微调、LoRA、大模型对比）</li>
+  <li><a href="https://github.com/MMJTT/omni-from-video-zh">omni-from-video-zh</a>：Omni 模型怎样看懂视频、听懂声音（9 章）</li>
+</ul>
+</main>
+<footer>教程 © MMJTT，CC BY-NC 4.0 · 示例照片为作者拍摄（已去除元数据）</footer>
+</body>
+</html>

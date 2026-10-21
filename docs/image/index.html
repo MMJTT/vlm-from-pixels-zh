@@ -1,0 +1,302 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>一张照片的旅程 · VLM 交互图解</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<header class="top">
+  <a class="brand" href="../">VLM 交互图解</a>
+  <a href="../basics/conv.html">卷积</a>
+  <a href="../basics/attention.html">注意力</a>
+  <a class="on" href="./">一张照片的旅程</a>
+  <a href="https://mmjtt.github.io/omni-from-video-zh/">一段视频的旅程 ↗</a>
+  <a href="https://github.com/MMJTT/vlm-from-pixels-zh">代码 ↗</a>
+</header>
+<main>
+<h1>一张照片的旅程</h1>
+<p class="lead">SmolVLM-256M 怎样把一张照片变成一句话。所有数据都是模型在 Mac 上真实算出来的（导出脚本 <span class="mono">tools/export_web_data.py</span>），每一步都可以播放、拖动、点击。</p>
+
+<!-- 1 输入 -->
+<section class="step" id="s1">
+  <h2><span class="num">1</span>模型看到的照片</h2>
+  <p class="explain">原图是 4:3 的，模型的视觉编码器只接受 512×512，于是照片被<b>拉伸</b>成正方形（第 02 章）。像素值再从 0~255 变成 −1~1。</p>
+  <div class="controls"><button id="s1play">▶ 拉伸成 512×512</button></div>
+  <canvas id="c1" width="640" height="512"></canvas>
+</section>
+
+<!-- 2 切块 -->
+<section class="step" id="s2">
+  <h2><span class="num">2</span>切块：1024 个 16×16 的小方块排成一队</h2>
+  <p class="explain">ViT 把图片切成 32×32 个 patch，按"从左到右、从上到下"排成一条序列。每个 patch 是 16×16×3 = 768 个数，一个线性层（16×16 的卷积）把它变成一个 768 维向量，也就是一个 <b>token</b>（第 03 章）。</p>
+  <div class="controls"><button id="s2play">▶ 播放切块动画</button><span class="label" id="s2info"></span></div>
+  <canvas id="c2" width="840" height="640"></canvas>
+</section>
+
+<!-- 3 视觉编码器 -->
+<section class="step" id="s3">
+  <h2><span class="num">3</span>视觉编码器：12 层里，图片变成了什么</h2>
+  <p class="explain">拖动滑块逐层查看。<b>PCA 着色</b>：颜色相近 = 模型认为两个位置相似。切到<b>注意力</b>或<b>相似度</b>后，<b>点击图片任意位置</b>，看那个位置在这一层"看向哪里"、"和谁像"。</p>
+  <div class="controls">
+    <button data-mode="pca" class="on">PCA 着色</button>
+    <button data-mode="attn">注意力（点击选位置）</button>
+    <button data-mode="sim">相似度（点击选位置）</button>
+    <label class="label"><input type="checkbox" id="s3out"> 标出离群 token</label>
+  </div>
+  <div class="controls"><button id="s3play">▶ 播放</button><input type="range" id="s3slider"><span class="value" id="s3label"></span></div>
+  <div class="row">
+    <div class="col"><canvas id="c3" class="click" width="512" height="512"></canvas></div>
+    <div class="col">
+      <canvas id="c3chart" width="460" height="220"></canvas>
+      <canvas id="c3dist" width="460" height="200"></canvas>
+      <p class="note" id="s3note"></p>
+    </div>
+  </div>
+</section>
+
+<!-- 4 pixel shuffle -->
+<section class="step" id="s4">
+  <h2><span class="num">4</span>连接器：1024 个 patch 压成 64 个 token</h2>
+  <p class="explain">相邻 4×4 个 patch 的向量<b>首尾拼接</b>（16×768 = 12288 维），再用一个线性层投影到语言模型的 576 维（第 04 章）。一个 token 对应原图 64×64 像素。</p>
+  <div class="controls"><button id="s4play">▶ 播放合并动画</button><span class="label" id="s4info"></span></div>
+  <canvas id="c4" width="800" height="360"></canvas>
+</section>
+
+<!-- 5 logit lens -->
+<section class="step" id="s5">
+  <h2><span class="num">5</span>语言模型 30 层：图像 token 在哪一层变成了"词"？</h2>
+  <p class="explain">Logit Lens：把每一层的输出直接解码成词（第 05 章）。中间层几乎都是 "and" 和空白，最后几层才出现 bowl、steak 这样的词。选一个概念词，看它的概率落在图片的哪里。</p>
+  <div class="controls" id="s5modes"><button data-c="words" class="on">每格最可能的词</button></div>
+  <div class="controls"><button id="s5play">▶ 播放</button><input type="range" id="s5slider"><span class="value" id="s5label"></span></div>
+  <div class="row">
+    <div class="col"><canvas id="c5" width="512" height="512"></canvas></div>
+    <div class="col"><p class="label">这一层如果直接开口，回答的第一个词会是：</p><div class="bars" id="s5bars"></div><p class="note" id="s5note"></p></div>
+  </div>
+</section>
+
+<!-- 6 生成 -->
+<section class="step" id="s6">
+  <h2><span class="num">6</span>逐词生成：每说一个词，它在看哪里？</h2>
+  <p class="explain">贪心解码，一次一个词（第 06 章）。<b>注意力</b>：生成这个词时对 64 个图像 token 的注意力（30 层 × 9 头平均）。<b>遮挡敏感度</b>：挡住某一格后，这个词的概率下降多少，更能说明"这个词靠哪块图片说出来"。</p>
+  <div class="controls">
+    <button data-h="occ" class="on">遮挡敏感度</button><button data-h="att">注意力</button>
+  </div>
+  <div class="controls"><button id="s6play">▶ 播放</button><input type="range" id="s6slider"><span class="value" id="s6label"></span></div>
+  <div class="answer" id="s6ans"></div>
+  <div class="row">
+    <div class="col"><canvas id="c6" width="512" height="512"></canvas></div>
+    <div class="col"><p class="label">这一步的候选词：</p><div class="bars" id="s6bars"></div><p class="note" id="s6note"></p></div>
+  </div>
+</section>
+</main>
+<footer>数据：SmolVLM-256M-Instruct（Apache-2.0）在 Apple M6 上的真实计算结果 · 教程 © MMJTT，CC BY-NC 4.0</footer>
+
+<script src="../assets/common.js"></script>
+<script>
+(async function () {
+  const D = "data/";
+  const [photo, inp, meta, lens, gen, attn, sim, finalPca, connPca] = await Promise.all([
+    loadImage(D + "photo.jpg"), loadImage(D + "input512.png"), loadJSON(D + "meta.json"), loadJSON(D + "lens.json"),
+    loadJSON(D + "generation.json"), loadBin(D + "vit_attn.bin"), loadBin(D + "vit_sim.bin"),
+    loadImage(D + "vit_final_pca.png"), loadImage(D + "connector_pca.png"),
+  ]);
+  const pcas = await Promise.all([...Array(13).keys()].map(i => loadImage(D + `vit_pca_${String(i).padStart(2, "0")}.png`)));
+  const G = 32, Q = 16;
+
+  // ---------- 1 输入 ----------
+  const c1 = $("#c1"), x1 = c1.getContext("2d");
+  function draw1(t) {
+    x1.clearRect(0, 0, 640, 512);
+    const w = 640 + (512 - 640) * t, h = 480 + (512 - 480) * t;
+    x1.drawImage(photo, 0, 0, w, h);
+    x1.fillStyle = "#1d1d1f"; x1.font = "15px sans-serif";
+    x1.fillText(t < 1 ? "原图 4:3" : "512 × 512（拉伸）", Math.min(w + 8, 520), 24);
+  }
+  draw1(0);
+  $("#s1play").onclick = () => tween(1400, t => draw1(ease(t)));
+
+  // ---------- 2 切块：传送带动画 ----------
+  const c2 = $("#c2"), x2 = c2.getContext("2d");
+  const S = 384, cell = S / G, BELT_Y = 470, T = 34, VIS = 22;  // 图像区边长、传送带位置、token 方块大小、传送带上显示的个数
+  function draw2(k, u) {  // 已送出 k 个 patch，第 k 个正在飞行，进度 u
+    x2.clearRect(0, 0, 840, 640);
+    x2.drawImage(inp, 0, 0, S, S);
+    x2.fillStyle = "rgba(250,250,247,.9)";
+    for (let i = 0; i < Math.min(k, G * G); i++) x2.fillRect((i % G) * cell, Math.floor(i / G) * cell, cell, cell);  // 已取走的位置留空
+    drawGrid(x2, G, 0, 0, S, S, "rgba(255,255,255,.5)", 0.4);
+    x2.fillStyle = "#1d1d1f"; x2.font = "14px sans-serif";
+    ["512×512 → 32×32 = 1024 个 patch", "每个 patch：16×16×3 = 768 个数", "→ 线性层 → 768 维向量 = 1 个 token", "→ 再加上位置编码（第几行第几列）", "顺序：从左到右，从上到下"].forEach((t, j) => x2.fillText(t, 410, 30 + j * 26));
+    x2.fillStyle = "#6b6b70"; x2.font = "13px sans-serif"; x2.fillText("token 序列（传送带向左移动，只显示最新的部分）", 0, BELT_Y - 30);
+    const first = Math.max(0, k - VIS + 1), shift = k >= VIS ? u * (T + 4) : 0;
+    for (let i = first; i < k; i++) {  // 传送带上的 token
+      const X = (i - first) * (T + 4) - shift + 4;
+      x2.drawImage(inp, (i % G) * 16, Math.floor(i / G) * 16, 16, 16, X, BELT_Y, T, T);
+      x2.strokeStyle = "#ccc"; x2.strokeRect(X, BELT_Y, T, T);
+      if (i % 4 === 0) { x2.fillStyle = "#6b6b70"; x2.font = "10px sans-serif"; x2.fillText("#" + i, X, BELT_Y + T + 13); }
+    }
+    if (k < G * G) {  // 正在飞的 patch
+      const r = Math.floor(k / G), c = k % G, sx = c * cell, sy = r * cell;
+      const tx = Math.min(k, VIS - 1) * (T + 4) + 4 - (k >= VIS ? (T + 4) : 0), ty = BELT_Y, e = ease(u);
+      const X = sx + (tx - sx) * e, Y = sy + (ty - sy) * e, Z = cell + (T - cell) * e;
+      x2.drawImage(inp, c * 16, r * 16, 16, 16, X, Y, Z, Z);
+      x2.strokeStyle = "#d0532b"; x2.lineWidth = 2; x2.strokeRect(X, Y, Z, Z); x2.lineWidth = 1;
+      x2.strokeRect(sx, sy, cell, cell);
+      $("#s2info").textContent = `patch #${k}：第 ${r} 行第 ${c} 列 → 序列第 ${k} 个 token`;
+    } else $("#s2info").textContent = "1024 个 patch 全部排好：这就是送进 Transformer 的序列";
+  }
+  draw2(0, 0);
+  let anim2 = null;
+  $("#s2play").onclick = () => {
+    if (anim2) cancelAnimationFrame(anim2);
+    let k = 0, u = 0, last = performance.now();
+    const step = now => {
+      const dt = now - last; last = now;
+      const dur = k < 6 ? 700 : k < 40 ? 160 : 6;  // 开头慢，后面越来越快
+      u += dt / dur;
+      while (u >= 1 && k < G * G) { u -= 1; k++; if (k >= 40) u = Math.min(u, 0.99); }
+      draw2(k, Math.min(u, 1));
+      if (k < G * G) anim2 = requestAnimationFrame(step);
+    };
+    anim2 = requestAnimationFrame(step);
+  };
+
+  // ---------- 3 视觉编码器 ----------
+  const c3 = $("#c3"), x3 = c3.getContext("2d");
+  let mode3 = "pca", q3 = 8 * Q + 8, L3 = 0;
+  const qrc = q => [Math.floor(q / Q), q % Q];
+  function draw3() {
+    x3.clearRect(0, 0, 512, 512);
+    if (mode3 === "pca") {
+      x3.imageSmoothingEnabled = false; x3.drawImage(pcas[L3], 0, 0, 512, 512); x3.imageSmoothingEnabled = true;
+      $("#s3note").textContent = L3 === 0 ? "嵌入层：颜色基本跟着像素颜色走，就像一张马赛克图。" :
+        L3 < 5 ? "浅层：开始出现碗的轮廓，但仍以颜色、纹理为主。" :
+        L3 < 11 ? "中深层：碗、桌面、餐垫各自成了一片颜色，按'是什么'而不是'什么颜色'分组。" : "最后几层：出现与内容无关的'杂点'——离群 token 和超大通道的影响（勾选上方复选框查看）。";
+    } else {
+      x3.drawImage(inp, 0, 0, 512, 512);
+      const isAttn = mode3 === "attn";
+      if (isAttn && L3 === 0) { $("#s3note").textContent = "嵌入层还没有经过注意力，请拖到第 1 层以后。"; }
+      else {
+        const l = isAttn ? L3 - 1 : L3, arr = isAttn ? attn : sim, off = (l * Q * Q + q3) * G * G;
+        const vals = Array.from(arr.subarray(off, off + G * G), v => v / 255);
+        drawHeat(x3, vals, G, G, 0, 0, 512, 512, 0.6, "jet");
+        $("#s3note").textContent = isAttn ? `第 ${l} 层：选中的位置（白框）把注意力分给了哪里（12 头平均）。浅层只看邻居，深层会看向远处——包括几个固定的'汇聚点'。` :
+          `第 ${l} 层：和选中位置（白框）余弦相似的地方。浅层是"颜色像"，深层是"同一种东西"。`;
+      }
+      const [r, c] = qrc(q3); x3.strokeStyle = "#fff"; x3.lineWidth = 2; x3.strokeRect(c * 32, r * 32, 32, 32);
+    }
+    if ($("#s3out").checked) {
+      x3.strokeStyle = "#ff2d2d"; x3.lineWidth = 2;
+      for (const i of meta.outliers[L3]) x3.strokeRect((i % G) * 16, Math.floor(i / G) * 16, 16, 16);
+    }
+    $("#s3label").textContent = L3 === 0 ? "嵌入层" : `第 ${L3 - 1} 层输出`;
+    lineChart($("#c3chart"), [
+      { name: "长度中位数", values: meta.norm_median, color: "#2b6fd0" },
+      { name: "长度最大值", values: meta.norm_max, color: "#d0532b" }], { highlight: L3, logY: true, xlabel: "状态（0=嵌入层）" });
+    const dm = meta.attn_distance.map(r => r.reduce((a, b) => a + b, 0) / r.length);
+    lineChart($("#c3dist"), [{ name: "平均注意力距离（像素，12 头平均）", values: dm, color: "#2a9d5b" }], { highlight: L3 > 0 ? L3 - 1 : null, xlabel: "层" });
+  }
+  const p3 = new Player({ n: 13, slider: $("#s3slider"), playBtn: $("#s3play"), interval: 900, onFrame: i => { L3 = i; draw3(); } });
+  document.querySelectorAll("#s3 [data-mode]").forEach(b => b.onclick = () => {
+    document.querySelectorAll("#s3 [data-mode]").forEach(x => x.classList.remove("on")); b.classList.add("on"); mode3 = b.dataset.mode; draw3();
+  });
+  $("#s3out").onchange = draw3;
+  c3.onclick = e => {
+    const r = c3.getBoundingClientRect(), x = (e.clientX - r.left) / r.width * 512, y = (e.clientY - r.top) / r.height * 512;
+    q3 = Math.floor(y / 32) * Q + Math.floor(x / 32);
+    if (mode3 === "pca") { mode3 = "attn"; document.querySelectorAll("#s3 [data-mode]").forEach(x => x.classList.toggle("on", x.dataset.mode === "attn")); if (L3 === 0) p3.go(7); }
+    draw3();
+  };
+  p3.go(0);
+
+  // ---------- 4 pixel shuffle ----------
+  const c4 = $("#c4"), x4 = c4.getContext("2d");
+  function draw4(k, u) { // 第 k 个 4×4 块，u∈[0,1] 移动进度
+    x4.clearRect(0, 0, 800, 360);
+    x4.imageSmoothingEnabled = false;
+    x4.drawImage(finalPca, 0, 20, 320, 320);
+    drawGrid(x4, 8, 0, 20, 320, 320, "rgba(255,255,255,.9)", 1.5);
+    x4.globalAlpha = 0.15; x4.drawImage(connPca, 470, 20, 320, 320); x4.globalAlpha = 1;
+    for (let j = 0; j < k; j++) x4.drawImage(connPca, j % 8, Math.floor(j / 8), 1, 1, 470 + (j % 8) * 40, 20 + Math.floor(j / 8) * 40, 40, 40);
+    drawGrid(x4, 8, 470, 20, 320, 320, "rgba(0,0,0,.25)", 1);
+    if (k < 64) {
+      const r = Math.floor(k / 8), c = k % 8, sx = c * 40, sy = 20 + r * 40, tx = 470 + c * 40, ty = 20 + r * 40;
+      x4.strokeStyle = "#d0532b"; x4.lineWidth = 3; x4.strokeRect(sx, sy, 40, 40);
+      const X = sx + (tx - sx) * ease(u), Y = sy + (ty - sy) * ease(u);
+      x4.drawImage(finalPca, c * 4, r * 4, 4, 4, X, Y, 40, 40);
+      x4.strokeRect(X, Y, 40, 40);
+    }
+    x4.imageSmoothingEnabled = true;
+    x4.fillStyle = "#1d1d1f"; x4.font = "13px sans-serif";
+    x4.fillText("视觉编码器输出 32×32×768", 0, 14); x4.fillText("连接器输出 8×8×576", 470, 14);
+    x4.fillText("4×4 个 patch", 340, 150); x4.fillText("拼接 12288 维", 340, 170); x4.fillText("→ Linear → 576", 340, 190);
+    $("#s4info").textContent = `第 ${Math.min(k + 1, 64)} / 64 个 token`;
+  }
+  draw4(0, 0);
+  $("#s4play").onclick = () => {
+    let k = 0;
+    const next = () => { if (k >= 64) { draw4(64, 0); return; } const kk = k; tween(k < 4 ? 700 : 90, u => draw4(kk, u), () => { k++; next(); }); };
+    next();
+  };
+
+  // ---------- 5 logit lens ----------
+  const c5 = $("#c5"), x5 = c5.getContext("2d");
+  let c5mode = "words", L5 = 30;
+  const conceptNames = Object.keys(lens.concepts);
+  conceptNames.forEach(w => { const b = document.createElement("button"); b.dataset.c = w; b.textContent = w; $("#s5modes").appendChild(b); });
+  function draw5() {
+    x5.drawImage(inp, 0, 0, 512, 512);
+    if (c5mode === "words") {
+      x5.font = "12px sans-serif"; x5.textAlign = "center"; x5.textBaseline = "middle";
+      lens.words[L5].forEach((w, i) => {
+        const cx = (i % 8) * 64 + 32, cy = Math.floor(i / 8) * 64 + 32, tw = x5.measureText(w).width + 6;
+        x5.fillStyle = "rgba(0,0,0,.62)"; x5.fillRect(cx - tw / 2, cy - 9, tw, 18);
+        x5.fillStyle = "#fff"; x5.fillText(w, cx, cy);
+      });
+      x5.textAlign = "start";
+      $("#s5note").textContent = L5 === 0 ? "第 0 层：刚从连接器出来，解码出的是乱码子词。" : L5 < 28 ? "中间层：几乎都是 and 和空白——图像 token 还不'像'任何一个词。" : "最后几层：肉的位置出现 steak，碗边出现 bowl，带字的小牌子旁出现 letter。";
+    } else {
+      const p = lens.concepts[c5mode][L5], mx = Math.max(...p);
+      drawHeat(x5, p, 8, 8, 0, 0, 512, 512, 0.6, "jet");
+      $("#s5note").textContent = `'${c5mode}' 在第 ${L5} 层的最大概率：${mx.toExponential(1)}。` + (mx < 1e-4 ? "概率极小，热力图基本是噪声。" : "概率已经不小，可以看看它是否落在对应的物体上。");
+    }
+    drawGrid(x5, 8, 0, 0, 512, 512, "rgba(255,255,255,.35)", 1);
+    $("#s5label").textContent = `第 ${L5} 层`;
+    renderBars($("#s5bars"), lens.last_top[L5]);
+  }
+  const p5 = new Player({ n: lens.words.length, slider: $("#s5slider"), playBtn: $("#s5play"), interval: 500, onFrame: i => { L5 = i; draw5(); } });
+  document.querySelectorAll("#s5modes button").forEach(b => b.onclick = () => {
+    document.querySelectorAll("#s5modes button").forEach(x => x.classList.remove("on")); b.classList.add("on"); c5mode = b.dataset.c; draw5();
+  });
+  p5.go(30);
+
+  // ---------- 6 生成 ----------
+  const c6 = $("#c6"), x6 = c6.getContext("2d"), steps = gen.steps;
+  let hmode = "occ", S6 = 0;
+  const allOcc = steps.flatMap(s => s.occlusion).filter(v => v > 0).sort((a, b) => a - b);
+  const occMax = allOcc[Math.floor(allOcc.length * 0.99)] || 1;  // 所有词、所有格子的 99% 分位数作为统一色标上限
+  $("#s6ans").innerHTML = steps.map((s, i) => `<span data-i="${i}">${esc(s.token)}</span>`).join("");
+  $("#s6ans").onclick = e => { if (e.target.dataset.i) { p6.stop(); p6.go(+e.target.dataset.i); } };
+  function draw6() {
+    const s = steps[S6];
+    x6.drawImage(inp, 0, 0, 512, 512);
+    const vals = hmode === "occ" ? s.occlusion.map(v => Math.max(0, v)) : s.img_att;
+    drawHeat(x6, vals, 8, 8, 0, 0, 512, 512, 0.55, "jet", true, hmode === "occ" ? occMax : null);  // 遮挡用全局色标，注意力每步单独归一化
+    drawGrid(x6, 8, 0, 0, 512, 512, "rgba(255,255,255,.3)", 1);
+    document.querySelectorAll("#s6ans span").forEach((el, i) => { el.className = i === S6 ? "cur" : i > S6 ? "future" : ""; });
+    $("#s6label").textContent = `第 ${S6 + 1} / ${steps.length} 个词`;
+    renderBars($("#s6bars"), s.top5);
+    const dep = s.occlusion.reduce((a, v) => a + Math.max(0, v), 0);
+    $("#s6note").innerHTML = `选中 <b>${esc(s.token)}</b>，概率 ${(s.prob * 100).toFixed(1)}%。` +
+      (hmode === "occ" ? `遮挡敏感度合计 ${dep.toFixed(2)}：` + (dep < 0.5 ? "几乎不依赖图片，是由前文'顺'出来的（比如 poached 之后的 egg）。" : "这个词明显依赖图片的某些区域。") : "注意力常被少数'汇聚点'吸走，不一定代表因果。");
+  }
+  const p6 = new Player({ n: steps.length, slider: $("#s6slider"), playBtn: $("#s6play"), interval: 700, loop: false, onFrame: i => { S6 = i; draw6(); } });
+  document.querySelectorAll("#s6 [data-h]").forEach(b => b.onclick = () => {
+    document.querySelectorAll("#s6 [data-h]").forEach(x => x.classList.remove("on")); b.classList.add("on"); hmode = b.dataset.h; draw6();
+  });
+  p6.go(0);
+})();
+</script>
+</body>
+</html>

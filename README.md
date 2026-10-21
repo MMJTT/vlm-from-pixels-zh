@@ -1,5 +1,7 @@
 # vlm-from-pixels-zh：从一张照片看懂视觉语言模型
 
+> 🎬 **交互图解网页**：<https://mmjtt.github.io/vlm-from-pixels-zh/>——卷积和注意力的逐步动画，以及"一张照片的旅程"（可播放、拖动、点击，看每一步的变化）。续篇"一段视频的旅程"见 [omni-from-video-zh](https://mmjtt.github.io/omni-from-video-zh/)。
+
 **中文 · 本机运行 · PyTorch 逐行注释**。在 Mac 上用 GPU（MPS）把 [SmolVLM-256M-Instruct](https://huggingface.co/HuggingFaceTB/SmolVLM-256M-Instruct) 一步一步拆开，看一张照片如何变成模型的回答。
 
 每一步都包含三样东西：
@@ -94,6 +96,7 @@ uv pip install --python .venv/bin/python -r requirements.txt
 │   └── download_models.py  下载模型权重
 ├── assets/photo.jpeg   示例照片（已去除 EXIF/GPS 等元数据）
 ├── results/html/       执行后的 HTML 阅读版
+├── docs/               交互图解网页（GitHub Pages），数据由 tools/export_web_data.py 导出
 └── models/             模型权重（不在仓库里，用 download_models.py 下载）
 ```
 

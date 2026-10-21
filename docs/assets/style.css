@@ -1,0 +1,72 @@
+/* 交互教程的公共样式：浅色、简洁，适合阅读 */
+:root {
+  --bg: #fafaf7;
+  --card: #ffffff;
+  --ink: #1d1d1f;
+  --muted: #6b6b70;
+  --line: #e4e4e0;
+  --accent: #d0532b;
+  --accent2: #2b6fd0;
+  --video: #1f77b4;
+  --audio: #ff7f0e;
+  --text: #9a9a9a;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--ink);
+  font: 16px/1.7 -apple-system, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+}
+header.top {
+  position: sticky; top: 0; z-index: 10; background: rgba(250,250,247,.92); backdrop-filter: blur(6px);
+  border-bottom: 1px solid var(--line); padding: 10px 24px; display: flex; gap: 18px; align-items: center; flex-wrap: wrap;
+}
+header.top a { color: var(--muted); text-decoration: none; font-size: 14px; }
+header.top a:hover, header.top a.on { color: var(--accent); }
+header.top .brand { color: var(--ink); font-weight: 600; margin-right: 8px; }
+main { max-width: 1120px; margin: 0 auto; padding: 24px 20px 80px; }
+h1 { font-size: 30px; margin: 18px 0 6px; }
+h2 { font-size: 22px; margin: 0 0 4px; }
+.lead { color: var(--muted); margin: 0 0 24px; }
+section.step {
+  background: var(--card); border: 1px solid var(--line); border-radius: 14px;
+  padding: 22px 24px; margin: 22px 0;
+}
+.step .num { color: var(--accent); font-weight: 700; margin-right: 6px; }
+.explain { color: #3a3a3e; margin: 6px 0 14px; }
+.row { display: flex; gap: 22px; flex-wrap: wrap; align-items: flex-start; }
+.col { flex: 1 1 320px; min-width: 280px; }
+canvas { max-width: 100%; display: block; border-radius: 8px; }
+canvas.click { cursor: crosshair; }
+.controls { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 10px 0; }
+button {
+  border: 1px solid var(--line); background: #fff; color: var(--ink); border-radius: 8px;
+  padding: 5px 12px; font: inherit; font-size: 14px; cursor: pointer;
+}
+button:hover { border-color: var(--accent); color: var(--accent); }
+button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+input[type=range] { flex: 1; min-width: 160px; accent-color: var(--accent); }
+.label { font-size: 13px; color: var(--muted); }
+.value { font-variant-numeric: tabular-nums; font-weight: 600; min-width: 64px; display: inline-block; }
+.note { font-size: 14px; color: var(--muted); border-left: 3px solid var(--line); padding-left: 10px; margin: 10px 0; }
+.kpi { display: inline-block; background: #f3f1ec; border-radius: 8px; padding: 2px 8px; margin: 2px; font-size: 13px; }
+.bars div.bar { display: flex; align-items: center; gap: 8px; font-size: 13px; margin: 2px 0; }
+.bars div.bar span.w { width: 110px; text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bars div.bar i { height: 12px; background: var(--accent2); border-radius: 3px; display: inline-block; }
+.answer { font-size: 17px; line-height: 1.9; min-height: 3.8em; }
+.answer span { border-radius: 4px; padding: 0 1px; cursor: pointer; }
+.answer span.cur { background: #ffe1d4; outline: 1px solid var(--accent); }
+.answer span.future { color: #c9c9c9; }
+.legend { display: flex; gap: 14px; font-size: 13px; color: var(--muted); flex-wrap: wrap; }
+.legend b { display: inline-block; width: 12px; height: 12px; border-radius: 3px; vertical-align: -1px; margin-right: 4px; }
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 18px; }
+.cards a.card {
+  display: block; background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 18px 20px;
+  color: var(--ink); text-decoration: none; transition: transform .15s, border-color .15s;
+}
+.cards a.card:hover { transform: translateY(-2px); border-color: var(--accent); }
+.cards a.card h3 { margin: 0 0 6px; }
+.cards a.card p { margin: 0; color: var(--muted); font-size: 14px; }
+.mono { font-family: ui-monospace, Menlo, monospace; font-size: 13px; }
+table.grid { border-collapse: collapse; font-size: 13px; }
+table.grid td, table.grid th { border: 1px solid var(--line); padding: 3px 7px; text-align: center; }
+footer { color: var(--muted); font-size: 13px; text-align: center; padding: 30px; }

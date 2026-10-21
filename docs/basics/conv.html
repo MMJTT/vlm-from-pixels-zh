@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>卷积是怎么算的 · VLM 交互图解</title>
+<link rel="stylesheet" href="../assets/style.css">
+<style>
+  .kgrid { display: grid; grid-template-columns: repeat(3, 58px); gap: 4px; }
+  .kgrid input { width: 58px; text-align: center; font: inherit; border: 1px solid var(--line); border-radius: 6px; padding: 4px 0; }
+  #calc { font-family: ui-monospace, Menlo, monospace; font-size: 13px; line-height: 1.6; white-space: pre; background: #f6f5f1; border-radius: 8px; padding: 10px 12px; min-height: 160px; }
+</style>
+</head>
+<body>
+<header class="top">
+  <a class="brand" href="../">VLM 交互图解</a>
+  <a class="on" href="conv.html">卷积</a>
+  <a href="attention.html">注意力</a>
+  <a href="../image/">一张照片的旅程</a>
+  <a href="https://mmjtt.github.io/omni-from-video-zh/">一段视频的旅程 ↗</a>
+</header>
+<main>
+<h1>卷积是怎么算的</h1>
+<p class="lead">一个卷积核在图片上一格一格地滑动：每到一个位置，把下面的像素和卷积核<b>逐个相乘再相加</b>，得到输出图上的一个像素（对应 vlm-from-pixels-zh 第 01 章）。</p>
+
+<section class="step">
+  <h2><span class="num">1</span>选一个卷积核</h2>
+  <div class="controls" id="presets"></div>
+  <div class="row">
+    <div>
+      <p class="label">卷积核（可直接修改数字）</p>
+      <div class="kgrid" id="kgrid"></div>
+    </div>
+    <div class="col">
+      <div class="controls">
+        <span class="label">步长 stride</span><button data-s="1" class="on">1</button><button data-s="2">2</button>
+        <span class="label" style="margin-left:12px">填充 padding</span><button data-p="1" class="on">1</button><button data-p="0">0</button>
+      </div>
+      <p class="note" id="shapeNote"></p>
+      <p class="note">也可以试试 <button id="patchMode">patch 模式</button>：卷积核 4×4、步长 4，窗口互不重叠。这正是 ViT 第一步"切块"的做法（SmolVLM 里是 16×16、步长 16）。</p>
+    </div>
+  </div>
+</section>
+
+<section class="step">
+  <h2><span class="num">2</span>看它滑动</h2>
+  <div class="controls">
+    <button id="play">▶ 播放</button><button id="stepBtn">单步 ›</button><button id="finish">⏭ 直接算完</button><button id="reset">↺ 重来</button>
+    <span class="label">速度</span><input type="range" id="speed" min="1" max="60" value="12" style="max-width:180px">
+    <span class="label" id="posInfo"></span>
+  </div>
+  <div class="row">
+    <div><p class="label">输入（灰度，28×28，取自那张照片）</p><canvas id="cin" width="336" height="336"></canvas></div>
+    <div><p class="label">这一步的计算</p><div id="calc"></div></div>
+    <div><p class="label" id="outLabel">输出</p><canvas id="cout" width="336" height="336"></canvas></div>
+  </div>
+  <p class="note">输出图的颜色：<span style="color:#2b6fd0">蓝 = 负数</span>、白 = 0、<span style="color:#d0532b">红 = 正数</span>。边缘检测核只在亮暗交界处有大的输出。</p>
+</section>
+</main>
+<footer>教程 © MMJTT，CC BY-NC 4.0 · <a href="https://github.com/MMJTT/vlm-from-pixels-zh">vlm-from-pixels-zh</a></footer>
+
+<script src="../assets/common.js"></script>
+<script>
+(async function () {
+  const N = 28;
+  const PRESETS = {
+    "竖直边缘": [[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]],
+    "水平边缘": [[-1, -2, -1], [0, 0, 0], [1, 2, 1]],
+    "模糊": [[1 / 9, 1 / 9, 1 / 9], [1 / 9, 1 / 9, 1 / 9], [1 / 9, 1 / 9, 1 / 9]],
+    "锐化": [[0, -1, 0], [-1, 5, -1], [0, -1, 0]],
+    "原样": [[0, 0, 0], [0, 1, 0], [0, 0, 0]],
+  };
+  // 读入照片并缩成 28×28 灰度
+  const im = await loadImage("../image/data/input512.png");
+  const off = document.createElement("canvas"); off.width = N; off.height = N;
+  const oc = off.getContext("2d"); oc.drawImage(im, 0, 0, N, N);
+  const px = oc.getImageData(0, 0, N, N).data, X = [];
+  for (let i = 0; i < N * N; i++) X.push((0.299 * px[4 * i] + 0.587 * px[4 * i + 1] + 0.114 * px[4 * i + 2]) / 255);
+
+  let K = PRESETS["竖直边缘"].map(r => r.slice()), k = 3, stride = 1, pad = 1, patch = false;
+  let out = [], pos = 0, timer = null, Ho, Wo;
+
+  // 卷积核输入框
+  function buildKernelUI() {
+    const g = $("#kgrid"); g.innerHTML = ""; g.style.gridTemplateColumns = `repeat(${k}, ${k > 3 ? 44 : 58}px)`;
+    for (let r = 0; r < k; r++) for (let c = 0; c < k; c++) {
+      const inp = document.createElement("input"); inp.type = "number"; inp.step = "0.1";
+      inp.value = +K[r][c].toFixed(3); if (k > 3) inp.style.width = "44px";
+      inp.oninput = () => { K[r][c] = parseFloat(inp.value) || 0; reset(); };
+      g.appendChild(inp);
+    }
+  }
+  Object.keys(PRESETS).forEach(name => {
+    const b = document.createElement("button"); b.textContent = name;
+    b.onclick = () => { patch = false; k = 3; K = PRESETS[name].map(r => r.slice()); setButtons(); buildKernelUI(); reset(); };
+    $("#presets").appendChild(b);
+  });
+  $("#patchMode").onclick = () => {
+    patch = true; k = 4; stride = 4; pad = 0;
+    K = Array.from({ length: 4 }, () => Array(4).fill(1 / 16));  // 平均池化式的核，便于看出"每块一个值"
+    setButtons(); buildKernelUI(); reset();
+  };
+  function setButtons() {
+    document.querySelectorAll("[data-s]").forEach(b => b.classList.toggle("on", +b.dataset.s === stride));
+    document.querySelectorAll("[data-p]").forEach(b => b.classList.toggle("on", +b.dataset.p === pad));
+  }
+  document.querySelectorAll("[data-s]").forEach(b => b.onclick = () => { if (!patch) { stride = +b.dataset.s; setButtons(); reset(); } });
+  document.querySelectorAll("[data-p]").forEach(b => b.onclick = () => { if (!patch) { pad = +b.dataset.p; setButtons(); reset(); } });
+
+  const val = (r, c) => (r < 0 || c < 0 || r >= N || c >= N) ? 0 : X[r * N + c];  // 越界的位置是填充的 0
+  function compute(p) {  // 第 p 个输出像素
+    const orow = Math.floor(p / Wo), ocol = p % Wo, r0 = orow * stride - pad, c0 = ocol * stride - pad;
+    let s = 0; const terms = [];
+    for (let i = 0; i < k; i++) for (let j = 0; j < k; j++) { const v = val(r0 + i, c0 + j); s += v * K[i][j]; terms.push([v, K[i][j]]); }
+    return { orow, ocol, r0, c0, s, terms };
+  }
+  function reset() {
+    stop(); Ho = Math.floor((N + 2 * pad - k) / stride) + 1; Wo = Ho; out = Array(Ho * Wo).fill(null); pos = 0;
+    $("#shapeNote").innerHTML = `输出尺寸 = ⌊(${N} + 2×${pad} − ${k}) / ${stride}⌋ + 1 = <b>${Ho}</b>，所以输出是 ${Ho}×${Wo}。`;
+    $("#outLabel").textContent = `输出（${Ho}×${Wo}）`;
+    draw(null);
+  }
+  function draw(cur) {
+    const ci = $("#cin").getContext("2d"), cs = 336 / N;
+    ci.clearRect(0, 0, 336, 336);
+    for (let i = 0; i < N * N; i++) { const g = Math.round(X[i] * 255); ci.fillStyle = `rgb(${g},${g},${g})`; ci.fillRect((i % N) * cs, Math.floor(i / N) * cs, cs, cs); }
+    if (cur) {
+      ci.strokeStyle = "#d0532b"; ci.lineWidth = 3; ci.strokeRect(cur.c0 * cs, cur.r0 * cs, k * cs, k * cs);
+      ci.fillStyle = "rgba(208,83,43,.12)"; ci.fillRect(cur.c0 * cs, cur.r0 * cs, k * cs, k * cs);
+    }
+    const co = $("#cout").getContext("2d"), os = 336 / Wo;
+    co.fillStyle = "#f3f1ec"; co.fillRect(0, 0, 336, 336);
+    let mx = 1e-9; out.forEach(v => { if (v !== null) mx = Math.max(mx, Math.abs(v)); });
+    out.forEach((v, i) => {
+      if (v === null) return;
+      const t = v / mx, a = Math.abs(t);
+      co.fillStyle = t >= 0 ? `rgb(255,${Math.round(255 - 160 * a)},${Math.round(255 - 200 * a)})` : `rgb(${Math.round(255 - 200 * a)},${Math.round(255 - 140 * a)},255)`;
+      if (patch || k === 3 && K.flat().every(w => w >= 0)) { const g = Math.round(Math.max(0, Math.min(1, v)) * 255); co.fillStyle = `rgb(${g},${g},${g})`; }
+      co.fillRect((i % Wo) * os, Math.floor(i / Wo) * os, os + 0.5, os + 0.5);
+    });
+    if (cur) { co.strokeStyle = "#d0532b"; co.lineWidth = 3; co.strokeRect(cur.ocol * os, cur.orow * os, os, os); }
+    if (cur) {
+      const lines = [];
+      for (let i = 0; i < k; i++) lines.push(cur.terms.slice(i * k, i * k + k).map(([v, w]) => `${v.toFixed(2)}×${(+w.toFixed(2)).toString().padStart(5)}`).join("  "));
+      $("#calc").textContent = `窗口左上角 = 输入第 ${cur.r0} 行第 ${cur.c0} 列\n\n${lines.join("\n")}\n\n相加 = ${cur.s.toFixed(3)}  → 输出第 ${cur.orow} 行第 ${cur.ocol} 列`;
+      $("#posInfo").textContent = `第 ${pos} / ${Ho * Wo} 个输出像素`;
+    } else { $("#calc").textContent = "点击 ▶ 播放 或 单步 ›"; $("#posInfo").textContent = ""; }
+  }
+  function step() { if (pos >= Ho * Wo) return stop(); const cur = compute(pos); out[pos] = cur.s; pos++; draw(cur); }
+  function stop() { clearInterval(timer); timer = null; $("#play").textContent = "▶ 播放"; $("#play").classList.remove("on"); }
+  function play() {
+    if (pos >= Ho * Wo) reset();
+    $("#play").textContent = "⏸ 暂停"; $("#play").classList.add("on");
+    const tick = () => { const n = Math.max(1, Math.round(+$("#speed").value / 12)); for (let i = 0; i < n; i++) step(); };
+    timer = setInterval(tick, Math.max(16, 600 / +$("#speed").value));
+  }
+  $("#play").onclick = () => timer ? stop() : play();
+  $("#stepBtn").onclick = () => { stop(); step(); };
+  $("#finish").onclick = () => { stop(); let cur = null; while (pos < Ho * Wo) { cur = compute(pos); out[pos] = cur.s; pos++; } draw(cur); };
+  $("#reset").onclick = reset;
+  $("#speed").oninput = () => { if (timer) { stop(); play(); } };
+  buildKernelUI(); reset();
+})();
+</script>
+</body>
+</html>

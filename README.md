@@ -114,7 +114,7 @@ uv pip install --python .venv/bin/python -r requirements.txt
 
 ## 许可证
 
-本教程的内容（文字、代码、Notebook、示例照片）采用 [CC BY-NC 4.0](LICENSE) 许可：可以自由分享和修改，但需要署名，并且**不得用于商业目的**。
+© 2026 MMJTT。本教程的内容（文字、代码、Notebook、示例照片）采用 [CC BY-NC 4.0](LICENSE) 许可：可以自由分享和修改，但需要署名，并且**不得用于商业目的**。
 
 本仓库不包含任何模型权重。使用到的模型遵循各自的许可证：
 
